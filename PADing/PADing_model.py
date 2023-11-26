@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from typing import Tuple
-
+import pdb
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -147,6 +147,7 @@ class PADing(nn.Module):
         self.dict_feature = nn.Embedding(trans_num_query, embedding_size)
         decoder_layer = TransformerDecoderLayer(embedding_size, 8, 1024, trans_drop_rate, "relu", False, noise=noise)
         decoder_norm = nn.LayerNorm(embedding_size)
+        # self.generator = GMMNnetwork(256, 256, 256, 256)
         self.generator = TransformerDecoder(decoder_layer, trans_num_layer, decoder_norm, return_intermediate=False)
         self.cls_criterion = nn.CrossEntropyLoss()
         self.no_object_weight = no_object_weight
@@ -348,6 +349,10 @@ class PADing(nn.Module):
         fake_seen_embeddings = self.generator(vector_choose_seen.unsqueeze(0), memory_bank).squeeze(0).squeeze(0)
         generate_loss = self.criterion_generator(fake_seen_embeddings, real_embeddings)
 
+        # generate_noise = torch.FloatTensor(vector_choose_seen.shape[0], vector_choose_seen.shape[1]).to(self.device).normal_(0, 1)
+        # fake_seen_embeddings = self.generator(vector_choose_seen, generate_noise)
+        # generate_loss = self.criterion_generator(fake_seen_embeddings, real_embeddings)
+        
         # cls_loss = self.cls_criterion(self.sem_seg_head.predictor.class_embed(fake_seen_embeddings)[:, :156], target_classes)
 
         cls_loss = self.cls_criterion(self.new_fc(fake_seen_embeddings)[:, :156], target_classes)
@@ -374,6 +379,9 @@ class PADing(nn.Module):
         memory_bank = self.dict_feature.weight.unsqueeze(1).repeat(1, vector_choose_unseen.shape[0], 1)
         fake_unseen_embeddings = self.generator(vector_choose_unseen.unsqueeze(0), memory_bank).squeeze(0).squeeze(0)
 
+        # generate_noise_unseen = torch.FloatTensor(vector_choose_unseen.shape[0], vector_choose_unseen.shape[1]).to(self.device).normal_(0, 1)
+        # fake_unseen_embeddings = self.generator(vector_choose_unseen, generate_noise_unseen)
+
         # fake unseen embedding
         fake_unseen_related = self.projection_related(fake_unseen_embeddings)
         fake_unseen_unrelated = self.projection_unrelated(fake_unseen_embeddings)
@@ -389,16 +397,21 @@ class PADing(nn.Module):
         rec_loss_4 = F.l1_loss(rec_fake_unseen, fake_unseen_embeddings)
         kl_unrelated_4 = kl_loss(fake_unseen_unrelated, fake_unseen_unrelated_noise)
 
-        kl_loss_all = (kl_related_3 + kl_unseen_1 + kl_unseen_2) / 3.0
+        kl_loss_all = (kl_related_3 + kl_unseen_1 + kl_unseen_2) / 3.0  # relationship alignment
         relation_loss = 0.2 * (relation_seen_1 + relation_unseen_1) / 2.0
         rec_loss = (rec_loss_1 + rec_loss_4) / 2.0
         unrelated = 0.5 * (kl_unrelated_1 + kl_unrelated_4)/2.0
 
-        loss_structure = self.weight_1 * (kl_loss_all + unrelated) + self.weight_2 * relation_loss + self.weight_3 * rec_loss
+        loss_structure = self.weight_1 * (kl_loss_all + unrelated) + self.weight_2 * relation_loss + self.weight_3 * rec_loss  # L_D in the original paper
 
         sperate_loss = cls_loss
 
+        # loss_structure = self.weight_1 * (kl_loss_all)
+
         losses = {'generate_loss': generate_loss + sperate_loss + self.structrue_weight * loss_structure}
+
+        # losses = {'generate_loss': generate_loss + sperate_loss}
+        # pdb.set_trace()
 
         return losses, real_embeddings_all, all_classes
 
@@ -437,6 +450,9 @@ class PADing(nn.Module):
 
         memory_bank = self.dict_feature.weight.unsqueeze(1).repeat(1, vector_choose.shape[0], 1)
         fake_unseen_embeddings = self.generator(vector_choose.unsqueeze(0), memory_bank).squeeze(0).squeeze(0)
+
+        # generate_noise_unseen = torch.FloatTensor(vector_choose.shape[0], vector_choose.shape[1]).to(self.device).normal_(0, 1)
+        # fake_unseen_embeddings = self.generator(vector_choose, generate_noise_unseen)
 
         labels_unseen = []
         for idx in index_choose:

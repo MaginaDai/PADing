@@ -51,3 +51,7 @@ _darcs
 /projects/*/datasets
 /models
 /snippet
+
+/result
+/PADing_panoptic.txt
+/saved
